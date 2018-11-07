@@ -30,6 +30,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws/corehandlers"
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/credentials/ec2rolecreds"
+	"github.com/aws/aws-sdk-go/aws/credentials/stscreds"
 	"github.com/aws/aws-sdk-go/aws/defaults"
 	"github.com/aws/aws-sdk-go/aws/ec2metadata"
 	"github.com/aws/aws-sdk-go/aws/request"
@@ -100,6 +101,9 @@ func init() {
 		}, {
 			Name: "secret_access_key",
 			Help: "AWS Secret Access Key (password)\nLeave blank for anonymous access or runtime credentials.",
+		}, {
+			Name: "assume_role_arn",
+			Help: "AWS IAM Role (ARN) to assume before accessing S3\nLeave blank to use the configured or runtime credentials normally.",
 		}, {
 			Name:     "region",
 			Help:     "Region to connect to.",
@@ -619,6 +623,7 @@ type Options struct {
 	EnvAuth              bool          `config:"env_auth"`
 	AccessKeyID          string        `config:"access_key_id"`
 	SecretAccessKey      string        `config:"secret_access_key"`
+	AssumeRoleARN        string        `config:"assume_role_arn"`
 	Region               string        `config:"region"`
 	Endpoint             string        `config:"endpoint"`
 	LocationConstraint   string        `config:"location_constraint"`
@@ -777,6 +782,16 @@ func s3Connection(opt *Options) (*s3.S3, *session.Session, error) {
 		},
 	}
 	cred := credentials.NewChainCredentials(providers)
+
+	if opt.AssumeRoleARN != "" {
+		// Make a fresh config for stscreds because we do not want the shortened timeout when communicating with STS
+		credConfig := defaults.Config().WithCredentials(cred)
+		credSession, err := session.NewSession(credConfig)
+		if err != nil {
+			return nil, nil, err
+		}
+		cred = stscreds.NewCredentials(credSession, opt.AssumeRoleARN)
+	}
 
 	switch {
 	case opt.EnvAuth:
